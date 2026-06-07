@@ -40,10 +40,18 @@ memory_store = {
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+ALLOWED_MODELS = {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"}
+DEFAULT_MODEL = "gemini-2.5-flash"
+
 def get_client(api_key: str | None) -> genai.Client:
     if not api_key:
         raise HTTPException(status_code=401, detail="Missing Gemini API key. Please reload and enter your key.")
     return genai.Client(api_key=api_key)
+
+def get_model(x_gemini_model: str | None) -> str:
+    if x_gemini_model and x_gemini_model in ALLOWED_MODELS:
+        return x_gemini_model
+    return DEFAULT_MODEL
 
 def strip_fences(text: str) -> str:
     text = text.strip()
@@ -200,7 +208,8 @@ async def extract(
     source_type: str = Form(...),
     text: Optional[str] = Form(None),
     files: list[UploadFile] = File(default=[]),
-    x_gemini_api_key: str | None = Header(default=None)
+    x_gemini_api_key: str | None = Header(default=None),
+    x_gemini_model: str | None = Header(default=None)
 ):
     client = get_client(x_gemini_api_key)
     parts = []
@@ -267,8 +276,9 @@ Content to extract from:
             mime = "image/png" if fname.lower().endswith(".png") else "image/jpeg"
             parts.append(types.Part.from_bytes(data=raw, mime_type=mime))
 
+    model = get_model(x_gemini_model)
     try:
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=parts)
+        response = client.models.generate_content(model=model, contents=parts)
     except genai_errors.ClientError as e:
         if e.code == 429:
             raise HTTPException(
@@ -298,7 +308,7 @@ class ReviseRequest(BaseModel):
 
 @app.post("/revise")
 @limiter.limit("10/minute")
-async def revise(request: Request, body: ReviseRequest, x_gemini_api_key: str | None = Header(default=None)):
+async def revise(request: Request, body: ReviseRequest, x_gemini_api_key: str | None = Header(default=None), x_gemini_model: str | None = Header(default=None)):
     client = get_client(x_gemini_api_key)
     current_signals = memory_store["batches"].get(body.batch_id)
     if current_signals is None:
@@ -329,7 +339,8 @@ No markdown fences. No preamble.
 }}
 """
 
-    response = client.models.generate_content(model="gemini-2.5-flash", contents=revision_prompt)
+    model = get_model(x_gemini_model)
+    response = client.models.generate_content(model=model, contents=revision_prompt)
     raw_text = response.text
 
     signals, relationships, notes = safe_parse_extraction(raw_text, source_name, source_type, body.batch_id)
@@ -418,13 +429,15 @@ class QueryRequest(BaseModel):
 
 @app.post("/query")
 @limiter.limit("20/minute")
-async def query(request: Request, body: QueryRequest, x_gemini_api_key: str | None = Header(default=None)):
+async def query(request: Request, body: QueryRequest, x_gemini_api_key: str | None = Header(default=None), x_gemini_model: str | None = Header(default=None)):
     client = get_client(x_gemini_api_key)
     if not memory_store["confirmed"]:
         raise HTTPException(status_code=400, detail="No confirmed memory yet")
 
     retrieved = retrieve_relevant(body.question, client, top_k=15)
     retrieved_signals = [{k: v for k, v in s.items() if k not in ("embedding",)} for s in retrieved]
+
+    model = get_model(x_gemini_model)
 
     if body.mode == "answer":
         prompt = f"""
@@ -454,7 +467,7 @@ Return ONLY a raw JSON object. No markdown fences. No preamble.
   "conflicts": ["..."]
 }}
 """
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        response = client.models.generate_content(model=model, contents=prompt)
         raw_text = response.text
         try:
             data = json.loads(strip_fences(raw_text))
@@ -501,7 +514,7 @@ Requirements for the generated component:
 
 Return ONLY the raw React component code. No markdown fences. No explanation.
 """
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        response = client.models.generate_content(model=model, contents=prompt)
         code = response.text
         if code.startswith("```"):
             code = strip_fences(code)

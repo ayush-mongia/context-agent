@@ -40,7 +40,7 @@ memory_store = {
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-ALLOWED_MODELS = {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-lite"}
+ALLOWED_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"}
 DEFAULT_MODEL = "gemini-2.5-flash"
 
 def get_client(api_key: str | None) -> genai.Client:

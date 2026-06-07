@@ -528,4 +528,3 @@ async def clear_memory(request: Request):
     memory_store["confirmed"].clear()
     memory_store["batches"].clear()
     return {"cleared": True}
-  

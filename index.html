@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Figr Context Memory</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface-2: #1e1e1e;
+    --border: #2a2a2a;
+    --text: #e8e8e8;
+    --text-muted: #888888;
+    --blue: #3b82f6;
+    --green: #22c55e;
+    --red: #ef4444;
+    --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── sidebar ── */
+  #sidebar {
+    width: 280px; min-width: 280px; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 1.25rem; gap: 1rem; overflow-y: auto;
+  }
+  #sidebar h2 { font-size: 15px; font-weight: 600; color: var(--text); }
+  .sidebar-section { display: flex; flex-direction: column; gap: .75rem; }
+  .sidebar-divider { border: none; border-top: 1px solid var(--border); }
+
+  .memory-empty { font-size: 13px; color: var(--text-muted); }
+  .type-badges { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .type-badge {
+    display: inline-flex; align-items: center; gap: .3rem;
+    font-size: 11px; padding: .2rem .5rem; border-radius: 999px;
+    background: var(--surface-2); border: 1px solid var(--border);
+  }
+  .type-badge .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+  .total-count { font-size: 12px; color: var(--text-muted); }
+
+  .btn-clear-memory {
+    background: transparent; border: 1px solid var(--border); color: var(--red);
+    font-size: 12px; padding: .3rem .7rem; border-radius: 6px; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-clear-memory:hover { background: rgba(239,68,68,.1); }
+
+  #query-panel { display: none; flex-direction: column; gap: .75rem; }
+  #query-panel.visible { display: flex; }
+  .mode-toggle { display: flex; gap: .5rem; }
+  .mode-btn {
+    flex: 1; background: transparent; border: 1px solid var(--border);
+    color: var(--text-muted); font-size: 13px; padding: .35rem; border-radius: 6px;
+    cursor: pointer; transition: all .15s; border-bottom: 2px solid transparent;
+  }
+  .mode-btn.active { color: var(--text); border-color: var(--blue); border-bottom-color: var(--blue); }
+  #query-textarea {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: .6rem; font-size: 13px;
+    resize: vertical; outline: none; font-family: inherit;
+  }
+  #query-textarea:focus { border-color: var(--blue); }
+  .btn-submit {
+    background: var(--blue); color: #fff; border: none; border-radius: 6px;
+    padding: .5rem 1rem; font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: opacity .15s; display: flex; align-items: center; justify-content: center; gap: .4rem;
+  }
+  .btn-submit:hover { opacity: .85; }
+  .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── main ── */
+  #main { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
+
+  /* stages */
+  .stage { display: none; }
+  .stage.active { display: flex; flex-direction: column; }
+
+  /* ── stage 0: api key ── */
+  #stage-apikey { align-items: center; justify-content: center; padding: 2rem; min-height: 100%; }
+  .apikey-card {
+    width: 100%; max-width: 460px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 2rem; display: flex; flex-direction: column; gap: 1.25rem;
+  }
+  .apikey-card h1 { font-size: 22px; font-weight: 600; }
+  .apikey-card p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+  .apikey-input-wrap { display: flex; gap: .5rem; }
+  .apikey-input-wrap .field-input { flex: 1; font-family: monospace; }
+  .btn-unlock {
+    background: var(--blue); color: #fff; border: none; border-radius: 6px;
+    padding: .5rem 1.1rem; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s; white-space: nowrap; display: flex; align-items: center; gap: .4rem;
+  }
+  .btn-unlock:hover { opacity: .85; }
+  .btn-unlock:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── stage 1: ingest ── */
+  #stage-ingest { align-items: center; justify-content: center; padding: 2rem; min-height: 100%; }
+  .ingest-card {
+    width: 100%; max-width: 580px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 2rem; display: flex; flex-direction: column; gap: 1.25rem;
+  }
+  .ingest-card h1 { font-size: 22px; font-weight: 600; }
+  .ingest-card p { font-size: 14px; color: var(--text-muted); }
+  .field-group { display: flex; flex-direction: column; gap: .4rem; }
+  .field-group label { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  .field-input, .field-select, .field-textarea {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: .5rem .75rem; font-size: 14px; font-family: inherit; outline: none;
+  }
+  .field-input:focus, .field-select:focus, .field-textarea:focus { border-color: var(--blue); }
+  .field-select option { background: var(--surface-2); }
+  .field-textarea { resize: vertical; }
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem;
+    text-align: center; cursor: pointer; color: var(--text-muted); font-size: 13px;
+    transition: border-color .15s;
+  }
+  .upload-zone:hover { border-color: var(--blue); }
+  .file-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .5rem; }
+  .file-chip {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: .25rem .5rem; font-size: 12px;
+  }
+  .file-chip img { width: 20px; height: 20px; object-fit: cover; border-radius: 3px; }
+  .file-chip .remove-chip { cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; }
+  .file-chip .remove-chip:hover { color: var(--red); }
+  .btn-extract {
+    background: var(--blue); color: #fff; border: none; border-radius: 8px;
+    padding: .75rem 1.25rem; font-size: 15px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s; display: flex; align-items: center; justify-content: center; gap: .5rem;
+  }
+  .btn-extract:hover { opacity: .85; }
+  .btn-extract:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── stage 2: review ── */
+  #stage-review { padding: 0; }
+  .review-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .75rem 1.25rem; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
+  }
+  .review-topbar-left { display: flex; flex-direction: column; gap: .2rem; }
+  .review-topbar-left strong { font-size: 14px; }
+  .review-topbar-right { display: flex; gap: .6rem; align-items: center; }
+  .btn-outline {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+    font-size: 13px; padding: .35rem .75rem; border-radius: 6px; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-outline:hover { background: var(--surface-2); }
+  .btn-confirm {
+    background: var(--green); color: #fff; border: none;
+    font-size: 13px; padding: .35rem .75rem; border-radius: 6px; cursor: pointer;
+    transition: opacity .15s; display: flex; align-items: center; gap: .3rem;
+  }
+  .btn-confirm:hover { opacity: .85; }
+  .btn-confirm:disabled { opacity: .5; cursor: not-allowed; }
+
+  .extraction-notes {
+    display: flex; gap: .5rem; align-items: flex-start;
+    margin: .75rem 1.25rem; padding: .6rem .75rem;
+    background: var(--surface-2); border-left: 3px solid var(--blue);
+    border-radius: 0 6px 6px 0; font-size: 12px; color: var(--text-muted); font-style: italic;
+  }
+
+  .signal-map-wrap { position: relative; margin: 0 1.25rem .75rem; border-radius: 8px; overflow: hidden; }
+  #signal-map { width: 100%; height: 65vh; background: #0d0d0d; display: block; }
+
+  .node-detail-panel {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 260px;
+    background: var(--surface); border-left: 1px solid var(--border);
+    padding: 1.25rem; overflow-y: auto;
+    transform: translateX(100%); transition: transform .2s ease;
+  }
+  .node-detail-panel.open { transform: translateX(0); }
+  .detail-type-badge {
+    display: inline-block; font-size: 11px; padding: .2rem .5rem; border-radius: 999px;
+    font-weight: 600; margin-bottom: .5rem;
+  }
+  .detail-source { font-size: 11px; color: var(--text-muted); margin-bottom: .75rem; }
+  .detail-body { font-size: 13px; line-height: 1.6; }
+  .detail-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-top: .75rem; margin-bottom: .2rem; }
+  .detail-tag {
+    display: inline-block; font-size: 11px; padding: .15rem .4rem;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; margin: .15rem .15rem 0 0;
+  }
+  .detail-close {
+    position: absolute; top: .75rem; right: .75rem;
+    background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; line-height: 1;
+  }
+  .detail-close:hover { color: var(--text); }
+  .detail-remove { color: var(--red); font-size: 12px; cursor: pointer; margin-top: 1rem; text-decoration: underline; background: none; border: none; }
+  .detail-confidence { display: inline-flex; align-items: center; gap: .3rem; font-size: 11px; padding: .15rem .5rem; border-radius: 999px; margin-top: .4rem; }
+
+  .feedback-panel {
+    margin: 0 1.25rem .75rem; padding: 1rem; background: var(--surface-2);
+    border-radius: 8px; display: none; flex-direction: column; gap: .6rem;
+  }
+  .feedback-panel.open { display: flex; }
+  .feedback-panel label { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: .5rem; }
+  .feedback-textarea {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: .5rem; font-size: 13px; font-family: inherit;
+    resize: vertical; outline: none;
+  }
+  .feedback-textarea:focus { border-color: var(--blue); }
+  .feedback-actions { display: flex; align-items: center; gap: .75rem; }
+  .btn-reextract {
+    background: var(--blue); color: #fff; border: none; border-radius: 6px;
+    padding: .4rem .9rem; font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: opacity .15s; display: flex; align-items: center; gap: .4rem;
+  }
+  .btn-reextract:hover { opacity: .85; }
+  .btn-reextract:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-cancel-feedback { background: none; border: none; color: var(--text-muted); font-size: 13px; cursor: pointer; }
+  .btn-cancel-feedback:hover { color: var(--text); }
+
+  .signal-list-wrap { margin: 0 1.25rem 1.25rem; }
+  .signal-list-wrap h3 { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .5rem; }
+  .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; max-height: 300px; overflow-y: auto; }
+  .signal-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: .5rem .75rem; cursor: pointer; transition: border-color .15s;
+    display: flex; flex-direction: column; gap: .25rem;
+  }
+  .signal-card:hover { border-color: var(--blue); }
+  .signal-card.selected { border-color: var(--blue); background: var(--surface-2); }
+  .sc-row { display: flex; align-items: center; gap: .4rem; }
+  .sc-text { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sc-source { font-size: 11px; color: var(--text-muted); }
+
+  /* ── stage 3: confirmed ── */
+  #stage-confirmed { align-items: center; justify-content: center; padding: 2rem; min-height: 100%; }
+  .confirmed-card {
+    width: 100%; max-width: 560px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 2rem; display: flex; flex-direction: column; gap: 1.25rem; align-items: center; text-align: center;
+  }
+  .confirmed-icon { width: 56px; height: 56px; border-radius: 50%; background: rgba(34,197,94,.15); display: flex; align-items: center; justify-content: center; font-size: 28px; }
+  .confirmed-card h2 { font-size: 24px; font-weight: 700; }
+  .confirmed-card p { font-size: 14px; color: var(--text-muted); }
+  .stats-row { display: flex; gap: .75rem; width: 100%; }
+  .stat-card {
+    flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: .75rem; display: flex; flex-direction: column; align-items: center; gap: .2rem;
+  }
+  .stat-num { font-size: 22px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  #mini-map { width: 100%; height: 180px; background: #0d0d0d; border-radius: 8px; display: block; }
+  .confirmed-actions { display: flex; gap: .75rem; width: 100%; }
+  .btn-ingest-another {
+    flex: 1; background: transparent; border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: .6rem 1rem; font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-ingest-another:hover { background: var(--surface-2); }
+  .btn-ask-question {
+    flex: 1; background: var(--blue); color: #fff; border: none;
+    border-radius: 8px; padding: .6rem 1rem; font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn-ask-question:hover { opacity: .85; }
+
+  /* ── stage 4: query result ── */
+  #stage-query { padding: 1.5rem; }
+  .query-result-header { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; }
+  .query-result-header h2 { font-size: 18px; font-weight: 600; }
+  .confidence-badge { font-size: 12px; font-weight: 600; padding: .2rem .6rem; border-radius: 999px; color: #000; }
+  .conf-high { background: var(--green); }
+  .conf-medium { background: var(--amber); }
+  .conf-low { background: var(--red); }
+
+  .answer-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 1.5rem; font-size: 15px; line-height: 1.7; margin-bottom: 1rem;
+  }
+  .section-heading { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .5rem; }
+  .signals-used-list { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1rem; }
+  .su-card {
+    display: flex; align-items: center; gap: .6rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: .4rem .75rem;
+  }
+  .su-middle { flex: 1; }
+  .su-source { font-size: 13px; font-weight: 500; }
+  .su-summary { font-size: 12px; color: var(--text-muted); }
+  .su-score { font-size: 12px; font-weight: 600; }
+  .score-green { color: var(--green); }
+  .score-amber { color: var(--amber); }
+  .score-red { color: var(--red); }
+
+  .conflicts-section { margin-bottom: 1rem; }
+  .conflict-card {
+    border-left: 3px solid var(--amber); background: rgba(245,158,11,.07);
+    border-radius: 0 6px 6px 0; padding: .5rem .75rem; font-size: 13px; margin-bottom: .4rem;
+    display: flex; gap: .4rem; align-items: flex-start;
+  }
+
+  .code-wrap { position: relative; margin-bottom: 1rem; }
+  .code-toolbar { display: flex; justify-content: flex-end; margin-bottom: .4rem; }
+  .btn-copy {
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    font-size: 12px; padding: .25rem .6rem; border-radius: 5px; cursor: pointer; transition: background .15s;
+  }
+  .btn-copy:hover { background: var(--surface); }
+  pre { background: #0d1117; border-radius: 8px; padding: 1rem; overflow-x: auto; }
+  pre code { font-size: 13px; line-height: 1.5; }
+
+  .mem-signals-section { margin-bottom: 1rem; }
+  .mem-signal-row { display: flex; align-items: flex-start; gap: .5rem; margin-bottom: .3rem; font-size: 13px; }
+
+  .btn-ask-another {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: .5rem 1rem; font-size: 13px; cursor: pointer;
+    transition: background .15s; margin-top: .5rem;
+  }
+  .btn-ask-another:hover { background: var(--surface); }
+
+  /* ── toasts ── */
+  #toast-container { position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
+  .toast {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: .6rem 1rem; font-size: 13px; max-width: 320px;
+    animation: slideIn .2s ease; display: flex; align-items: center; gap: .5rem;
+  }
+  .toast.error { border-left: 3px solid var(--red); }
+  .toast.success { border-left: 3px solid var(--green); }
+  @keyframes slideIn { from { transform: translateX(60px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ── spinner ── */
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3);
+    border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── pill ── */
+  .pill {
+    display: inline-block; font-size: 11px; padding: .15rem .45rem;
+    border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+  }
+
+  /* revision badge */
+  .revision-badge {
+    display: inline-block; font-size: 10px; padding: .1rem .4rem;
+    background: rgba(59,130,246,.2); color: var(--blue); border-radius: 999px;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ───────────── SIDEBAR ───────────── -->
+<nav id="sidebar">
+  <h2>Context Memory</h2>
+
+  <div class="sidebar-section" id="memory-status">
+    <div class="memory-empty" id="memory-empty-msg">Memory empty</div>
+    <div class="type-badges" id="memory-badges" style="display:none"></div>
+    <div class="total-count" id="memory-total" style="display:none"></div>
+    <button class="btn-clear-memory" id="btn-clear-memory" style="display:none" onclick="clearMemory()">Clear memory</button>
+  </div>
+
+  <hr class="sidebar-divider" />
+
+  <div id="query-panel">
+    <div class="sidebar-section">
+      <span style="font-size:13px;font-weight:600;color:var(--text)">Query memory</span>
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="mode-answer" onclick="setMode('answer')">Answer</button>
+        <button class="mode-btn" id="mode-artifact" onclick="setMode('generate_artifact')">Generate Artifact</button>
+      </div>
+      <textarea id="query-textarea" class="field-textarea" rows="4" placeholder="Ask anything about your context..."></textarea>
+      <button class="btn-submit" id="btn-query" onclick="submitQuery()">
+        Query →
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ───────────── MAIN ───────────── -->
+<main id="main">
+
+  <!-- STAGE 0: API KEY -->
+  <div id="stage-apikey" class="stage active">
+    <div class="apikey-card">
+      <div>
+        <h1>Enter your Gemini API key</h1>
+        <p style="margin-top:.35rem">Your key is used only for this session and is never stored. You'll need to re-enter it on each refresh.</p>
+      </div>
+      <div class="field-group">
+        <label>Gemini API key</label>
+        <div class="apikey-input-wrap">
+          <input id="apikey-input" class="field-input" type="password" placeholder="AIza…" autocomplete="off" onkeydown="if(event.key==='Enter')unlockWithKey()" />
+          <button class="btn-unlock" id="btn-unlock" onclick="unlockWithKey()">Unlock →</button>
+        </div>
+      </div>
+      <div id="apikey-error" style="font-size:13px;color:var(--red);display:none"></div>
+      <p style="font-size:12px;color:var(--text-muted)">Get a free key at <span style="color:var(--blue)">aistudio.google.com</span></p>
+    </div>
+  </div>
+
+  <!-- STAGE 1: INGEST -->
+  <div id="stage-ingest" class="stage">
+    <div class="ingest-card">
+      <div>
+        <h1>Ingest context</h1>
+        <p style="margin-top:.35rem">Paste text, upload a PDF, or add screenshots</p>
+      </div>
+
+      <div class="field-group">
+        <label>Source name</label>
+        <input id="source-name" class="field-input" type="text" placeholder="e.g. Billing PRD v2" />
+      </div>
+
+      <div class="field-group">
+        <label>Source type</label>
+        <select id="source-type" class="field-select">
+          <option value="prd">PRD</option>
+          <option value="slack">Slack</option>
+          <option value="design_notes">Design Notes</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label>Paste content (optional)</label>
+        <textarea id="paste-text" class="field-textarea" rows="8" placeholder="Paste text here..."></textarea>
+      </div>
+
+      <div class="field-group">
+        <label>Files</label>
+        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+          Drop files or click to upload
+          <div style="font-size:11px;margin-top:.25rem;color:var(--text-muted)">.pdf .png .jpg .jpeg</div>
+        </div>
+        <input id="file-input" type="file" accept=".pdf,.png,.jpg,.jpeg" multiple style="display:none" onchange="handleFileSelect(this)" />
+        <div class="file-chips" id="file-chips"></div>
+      </div>
+
+      <button id="btn-extract" class="btn-extract" onclick="extractSignals()">
+        Extract signals →
+      </button>
+    </div>
+  </div>
+
+  <!-- STAGE 2: REVIEW -->
+  <div id="stage-review" class="stage">
+    <div class="review-topbar">
+      <div class="review-topbar-left">
+        <strong id="review-heading"></strong>
+        <div style="display:flex;gap:.4rem;align-items:center;margin-top:.15rem">
+          <span id="source-type-pill" class="pill"></span>
+          <span id="signal-count-label" style="font-size:12px;color:var(--text-muted)"></span>
+        </div>
+      </div>
+      <div class="review-topbar-right">
+        <button class="btn-outline" onclick="toggleFeedback()">Give feedback</button>
+        <button class="btn-confirm" id="btn-confirm" onclick="confirmSignals()">Confirm &amp; store →</button>
+      </div>
+    </div>
+
+    <div class="extraction-notes" id="extraction-notes-box">
+      <span>ℹ️</span>
+      <span id="extraction-notes-text"></span>
+    </div>
+
+    <div class="signal-map-wrap">
+      <svg id="signal-map"></svg>
+      <div class="node-detail-panel" id="node-detail-panel">
+        <button class="detail-close" onclick="closeDetailPanel()">×</button>
+        <div id="detail-content"></div>
+        <button class="detail-remove" onclick="removeSelectedSignal()">Remove signal</button>
+      </div>
+    </div>
+
+    <div class="feedback-panel" id="feedback-panel">
+      <label>
+        What should Gemini fix, add, or remove?
+        <span id="revision-badge" class="revision-badge" style="display:none"></span>
+      </label>
+      <textarea id="feedback-textarea" class="feedback-textarea" rows="3" placeholder="e.g. You missed the 3-attempt retry constraint"></textarea>
+      <div class="feedback-actions">
+        <button class="btn-reextract" id="btn-reextract" onclick="reExtract()">Re-extract with feedback →</button>
+        <button class="btn-cancel-feedback" onclick="toggleFeedback()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="signal-list-wrap">
+      <h3>All signals</h3>
+      <div class="signal-grid" id="signal-grid"></div>
+    </div>
+  </div>
+
+  <!-- STAGE 3: CONFIRMED -->
+  <div id="stage-confirmed" class="stage">
+    <div class="confirmed-card">
+      <div class="confirmed-icon">✓</div>
+      <div>
+        <h2 id="confirmed-count-heading"></h2>
+        <p id="confirmed-source-label"></p>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total"></div>
+          <div class="stat-label">Total in memory</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-sources"></div>
+          <div class="stat-label">Sources ingested</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-types"></div>
+          <div class="stat-label">Signal types</div>
+        </div>
+      </div>
+      <div class="type-badges" id="confirmed-badges"></div>
+      <svg id="mini-map"></svg>
+      <div class="confirmed-actions">
+        <button class="btn-ingest-another" onclick="goToIngest()">Ingest another source →</button>
+        <button class="btn-ask-question" onclick="focusQuery()">Ask a question ↓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STAGE 4: QUERY RESULT -->
+  <div id="stage-query" class="stage">
+    <div id="query-result-content"></div>
+  </div>
+
+</main>
+
+<!-- ───────────── TOASTS ───────────── -->
+<div id="toast-container"></div>
+
+<script>
+// ─────────────────────────── STATE ────────────────────────────
+let state = {
+  geminiApiKey: '',   // lives only in JS memory — gone on refresh
+  batchId: null,
+  signals: [],
+  relationships: [],
+  sourceName: '',
+  sourceType: '',
+  revisionCount: 0,
+  selectedFiles: [],
+  selectedNodeId: null,
+  queryMode: 'answer',
+  memoryTotal: 0
+};
+
+function apiHeaders(extra) {
+  return Object.assign({ 'X-Gemini-Api-Key': state.geminiApiKey }, extra);
+}
+
+const SIGNAL_COLORS = {
+  decision:      '#3b82f6',
+  component:     '#8b5cf6',
+  pattern:       '#14b8a6',
+  constraint:    '#ef4444',
+  open_question: '#f59e0b',
+  persona:       '#22c55e',
+  key_fact:      '#6b7280'
+};
+
+// ─────────────────────────── UTILS ────────────────────────────
+function showStage(id) {
+  document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function toast(msg, type = 'error') {
+  const container = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span>${type === 'error' ? '⚠' : '✓'}</span><span>${msg}</span>`;
+  container.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+function setLoading(btnId, loading, text) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  if (loading) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> ${text}`;
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = text;
+  }
+}
+
+function badgeHtml(type, text) {
+  const color = SIGNAL_COLORS[type] || '#6b7280';
+  return `<span class="detail-type-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${escapeHtml(text || type)}</span>`;
+}
+
+function pillHtml(text) {
+  return `<span class="pill">${escapeHtml(text)}</span>`;
+}
+
+function signalPrimaryText(signal) {
+  const c = signal.content;
+  switch (signal.signal_type) {
+    case 'decision':      return c.text || '';
+    case 'component':     return c.name || '';
+    case 'pattern':       return c.name || '';
+    case 'constraint':    return c.text || '';
+    case 'open_question': return c.question || '';
+    case 'persona':       return c.name || '';
+    case 'key_fact':      return c.text || '';
+    default:              return JSON.stringify(c).slice(0, 60);
+  }
+}
+
+// ─────────────────────────── API KEY ────────────────────────────
+async function unlockWithKey() {
+  const key = document.getElementById('apikey-input').value.trim();
+  const errorEl = document.getElementById('apikey-error');
+  errorEl.style.display = 'none';
+  if (!key) { errorEl.textContent = 'Please enter your API key.'; errorEl.style.display = 'block'; return; }
+
+  const btn = document.getElementById('btn-unlock');
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span> Validating…`;
+
+  try {
+    const res = await fetch('/validate-key', {
+      method: 'POST',
+      headers: { 'X-Gemini-Api-Key': key }
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Invalid key');
+    }
+    state.geminiApiKey = key;
+    showStage('stage-ingest');
+  } catch (e) {
+    errorEl.textContent = e.message;
+    errorEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Unlock →';
+  }
+}
+
+// ─────────────────────────── FILE UPLOAD ────────────────────────
+function handleFileSelect(input) {
+  const newFiles = Array.from(input.files);
+  newFiles.forEach(f => {
+    if (!state.selectedFiles.find(ef => ef.name === f.name && ef.size === f.size)) {
+      state.selectedFiles.push(f);
+    }
+  });
+  renderFileChips();
+  input.value = '';
+}
+
+function renderFileChips() {
+  const container = document.getElementById('file-chips');
+  container.innerHTML = '';
+  state.selectedFiles.forEach((f, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'file-chip';
+    const isImage = f.name.match(/\.(png|jpg|jpeg)$/i);
+    if (isImage) {
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      chip.appendChild(img);
+    }
+    const name = document.createElement('span');
+    name.textContent = f.name.length > 22 ? f.name.slice(0, 20) + '…' : f.name;
+    name.style.fontSize = '12px';
+    const remove = document.createElement('span');
+    remove.className = 'remove-chip';
+    remove.textContent = '×';
+    remove.onclick = () => { state.selectedFiles.splice(i, 1); renderFileChips(); };
+    chip.appendChild(name);
+    chip.appendChild(remove);
+    container.appendChild(chip);
+  });
+}
+
+// drag-drop
+const uploadZone = document.getElementById('upload-zone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.style.borderColor = 'var(--blue)'; });
+uploadZone.addEventListener('dragleave', () => { uploadZone.style.borderColor = 'var(--border)'; });
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.style.borderColor = 'var(--border)';
+  const files = Array.from(e.dataTransfer.files).filter(f => f.name.match(/\.(pdf|png|jpg|jpeg)$/i));
+  files.forEach(f => {
+    if (!state.selectedFiles.find(ef => ef.name === f.name)) state.selectedFiles.push(f);
+  });
+  renderFileChips();
+});
+
+// ─────────────────────────── EXTRACT ────────────────────────────
+async function extractSignals() {
+  const sourceName = document.getElementById('source-name').value.trim();
+  const sourceType = document.getElementById('source-type').value;
+  const text = document.getElementById('paste-text').value.trim();
+
+  if (!sourceName) { toast('Please enter a source name'); return; }
+  if (!text && state.selectedFiles.length === 0) { toast('Please add text or files to extract from'); return; }
+
+  setLoading('btn-extract', true, 'Extracting signals with Gemini...');
+  document.querySelectorAll('#stage-ingest input, #stage-ingest select, #stage-ingest textarea').forEach(el => el.disabled = true);
+
+  try {
+    const fd = new FormData();
+    fd.append('source_name', sourceName);
+    fd.append('source_type', sourceType);
+    if (text) fd.append('text', text);
+    state.selectedFiles.forEach(f => fd.append('files', f));
+
+    const res = await fetch('/extract', { method: 'POST', headers: apiHeaders(), body: fd });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    state.batchId = data.batch_id;
+    state.signals = data.signals;
+    state.relationships = data.relationships;
+    state.sourceName = sourceName;
+    state.sourceType = sourceType;
+    state.revisionCount = 0;
+
+    renderReviewStage(data);
+    showStage('stage-review');
+  } catch (e) {
+    toast('Extraction failed: ' + e.message);
+  } finally {
+    setLoading('btn-extract', false, 'Extract signals →');
+    document.querySelectorAll('#stage-ingest input, #stage-ingest select, #stage-ingest textarea').forEach(el => el.disabled = false);
+  }
+}
+
+// ─────────────────────────── REVIEW STAGE ────────────────────────
+function renderReviewStage(data) {
+  document.getElementById('review-heading').textContent =
+    `${data.signals.length} signal${data.signals.length !== 1 ? 's' : ''} extracted from ${state.sourceName}`;
+  document.getElementById('source-type-pill').textContent = state.sourceType;
+  document.getElementById('signal-count-label').textContent = '';
+  document.getElementById('extraction-notes-text').textContent = data.extraction_notes || '';
+
+  renderSignalMap(data.signals, data.relationships, 'signal-map', false);
+  renderSignalGrid(data.signals);
+}
+
+function renderSignalGrid(signals) {
+  const grid = document.getElementById('signal-grid');
+  grid.innerHTML = '';
+  signals.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'signal-card';
+    card.dataset.id = s.id;
+    const primary = signalPrimaryText(s);
+    card.innerHTML = `
+      <div class="sc-row">
+        ${badgeHtml(s.signal_type, s.signal_type)}
+      </div>
+      <div class="sc-text">${escapeHtml(primary.slice(0, 70))}${primary.length > 70 ? '…' : ''}</div>
+      <div class="sc-source">${escapeHtml(s.source_name)}</div>
+    `;
+    card.onclick = () => selectSignalCard(s.id);
+    grid.appendChild(card);
+  });
+}
+
+function selectSignalCard(id) {
+  document.querySelectorAll('.signal-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector(`.signal-card[data-id="${id}"]`);
+  if (card) card.classList.add('selected');
+  const signal = state.signals.find(s => s.id === id);
+  if (signal) openDetailPanel(signal);
+}
+
+// ─────────────────────────── D3 MAP ────────────────────────────
+function renderSignalMap(signals, relationships, svgId, mini = false) {
+  const svgEl = document.getElementById(svgId);
+  d3.select(`#${svgId}`).selectAll('*').remove();
+
+  const W = svgEl.clientWidth || svgEl.getBoundingClientRect().width || 800;
+  const H = svgEl.clientHeight || (mini ? 180 : window.innerHeight * 0.65);
+
+  const charge = mini ? -150 : -320;
+  const linkDist = mini ? 80 : 130;
+  const nodeScale = mini ? 0.7 : 1;
+
+  const svg = d3.select(`#${svgId}`)
+    .attr('width', W).attr('height', H);
+
+  // defs: arrowhead
+  const defs = svg.append('defs');
+  defs.append('marker')
+    .attr('id', `arrow-${svgId}`)
+    .attr('viewBox', '0 -5 10 10').attr('refX', 28).attr('refY', 0)
+    .attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#444');
+
+  const nodes = signals.map(s => ({ ...s }));
+  const nodeById = {};
+  nodes.forEach(n => { nodeById[n.id] = n; });
+
+  const links = [];
+  relationships.forEach(r => {
+    if (nodeById[r.from_id] && nodeById[r.to_id]) {
+      links.push({ source: r.from_id, target: r.to_id, label: r.relationship_type });
+    }
+  });
+  // also traverse signal.relationships
+  signals.forEach(s => {
+    (s.relationships || []).forEach(r => {
+      if (nodeById[r.target_id]) {
+        links.push({ source: s.id, target: r.target_id, label: r.relationship_type });
+      }
+    });
+  });
+
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(linkDist))
+    .force('charge', d3.forceManyBody().strength(charge))
+    .force('center', d3.forceCenter(W / 2, H / 2))
+    .force('collision', d3.forceCollide().radius(44 * nodeScale));
+
+  const linkG = svg.append('g');
+  const link = linkG.selectAll('line').data(links).join('line')
+    .attr('stroke', '#333').attr('stroke-width', 1)
+    .attr('marker-end', `url(#arrow-${svgId})`);
+
+  const linkLabel = linkG.selectAll('text').data(links).join('text')
+    .attr('fill', '#555').attr('font-size', 9).attr('text-anchor', 'middle')
+    .text(d => d.label);
+
+  const nodeG = svg.append('g');
+  const nodeEnter = nodeG.selectAll('g').data(nodes).join('g')
+    .attr('opacity', 0.85)
+    .style('cursor', mini ? 'default' : 'pointer');
+
+  // shapes per type
+  nodeEnter.each(function(d) {
+    const g = d3.select(this);
+    const color = SIGNAL_COLORS[d.signal_type] || '#6b7280';
+    const fill = color + '40';
+    const stroke = color + 'e6';
+    const scale = nodeScale;
+
+    switch (d.signal_type) {
+      case 'decision': {
+        const hw = 30 * scale, hh = 18 * scale;
+        g.append('polygon')
+          .attr('points', `0,${-hh} ${hw},0 0,${hh} ${-hw},0`)
+          .attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5);
+        break;
+      }
+      case 'component': {
+        const w = 60 * scale, h = 36 * scale;
+        g.append('rect')
+          .attr('x', -w/2).attr('y', -h/2).attr('width', w).attr('height', h)
+          .attr('rx', 4).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5);
+        break;
+      }
+      case 'pattern': {
+        const w = 64 * scale, h = 36 * scale;
+        g.append('rect')
+          .attr('x', -w/2).attr('y', -h/2).attr('width', w).attr('height', h)
+          .attr('rx', 14).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5);
+        break;
+      }
+      case 'constraint': {
+        g.append('circle').attr('r', 20 * scale)
+          .attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5)
+          .attr('stroke-dasharray', `${4 * scale},${3 * scale}`);
+        break;
+      }
+      case 'open_question': {
+        g.append('circle').attr('r', 20 * scale)
+          .attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5);
+        break;
+      }
+      case 'persona': {
+        g.append('circle').attr('r', 22 * scale)
+          .attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5);
+        g.append('circle').attr('r', 16 * scale)
+          .attr('fill', 'none').attr('stroke', stroke).attr('stroke-width', 1);
+        break;
+      }
+      case 'key_fact': {
+        const w = 48 * scale, h = 28 * scale;
+        g.append('rect')
+          .attr('x', -w/2).attr('y', -h/2).attr('width', w).attr('height', h)
+          .attr('rx', 3).attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5);
+        break;
+      }
+      default: {
+        g.append('circle').attr('r', 18 * scale)
+          .attr('fill', fill).attr('stroke', stroke).attr('stroke-width', 1.5);
+      }
+    }
+
+    if (!mini) {
+      const label = signalPrimaryText(d);
+      g.append('text')
+        .attr('y', 32 * scale).attr('text-anchor', 'middle')
+        .attr('font-size', 10).attr('fill', '#fff')
+        .text(label.slice(0, 28) + (label.length > 28 ? '…' : ''));
+    }
+  });
+
+  // interactions (non-mini)
+  if (!mini) {
+    nodeEnter
+      .on('mouseover', function(event, d) {
+        const connected = new Set([d.id]);
+        links.forEach(l => {
+          const sid = typeof l.source === 'object' ? l.source.id : l.source;
+          const tid = typeof l.target === 'object' ? l.target.id : l.target;
+          if (sid === d.id || tid === d.id) { connected.add(sid); connected.add(tid); }
+        });
+        nodeEnter.attr('opacity', n => connected.has(n.id) ? 1.0 : 0.2);
+        link.attr('opacity', l => {
+          const sid = typeof l.source === 'object' ? l.source.id : l.source;
+          const tid = typeof l.target === 'object' ? l.target.id : l.target;
+          return connected.has(sid) && connected.has(tid) ? 1.0 : 0.1;
+        });
+      })
+      .on('mouseout', function() {
+        nodeEnter.attr('opacity', 0.85);
+        link.attr('opacity', 1);
+      })
+      .on('click', function(event, d) {
+        event.stopPropagation();
+        state.selectedNodeId = d.id;
+        openDetailPanel(d);
+        selectSignalCard(d.id);
+      });
+
+    nodeEnter.call(
+      d3.drag()
+        .on('start', (event, d) => { if (!event.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on('end', (event, d) => { if (!event.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+    );
+
+    svg.on('click', () => closeDetailPanel());
+  }
+
+  sim.on('tick', () => {
+    link
+      .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    linkLabel
+      .attr('x', d => (d.source.x + d.target.x) / 2)
+      .attr('y', d => (d.source.y + d.target.y) / 2 - 4);
+    nodeEnter.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+}
+
+// ─────────────────────────── DETAIL PANEL ────────────────────────
+function openDetailPanel(signal) {
+  const panel = document.getElementById('node-detail-panel');
+  const content = document.getElementById('detail-content');
+  state.selectedNodeId = signal.id;
+
+  const color = SIGNAL_COLORS[signal.signal_type] || '#6b7280';
+  const c = signal.content;
+  let html = `${badgeHtml(signal.signal_type, signal.signal_type)}
+    <div class="detail-source">${escapeHtml(signal.source_name)} ${pillHtml(signal.source_type)}</div>
+    <div class="detail-body">`;
+
+  switch (signal.signal_type) {
+    case 'decision':
+      html += `<div style="font-size:15px">${escapeHtml(c.text || '')}</div>`;
+      if (c.rationale) html += `<div class="detail-label">Rationale</div><div style="font-size:13px;color:var(--text-muted)">${escapeHtml(c.rationale)}</div>`;
+      html += `<div style="margin-top:.5rem">${confidenceBadge(c.confidence)}</div>`;
+      break;
+    case 'component':
+      html += `<div style="font-size:16px;font-weight:600;margin-bottom:.35rem">${escapeHtml(c.name || '')}</div>`;
+      html += `<div style="font-size:13px">${escapeHtml(c.description || '')}</div>`;
+      if (c.constraints && c.constraints.length) {
+        html += `<div class="detail-label">Constraints</div>`;
+        c.constraints.forEach(ct => html += `<span class="detail-tag">${escapeHtml(ct)}</span> `);
+      }
+      break;
+    case 'pattern':
+      html += `<div style="font-size:16px;font-weight:600;margin-bottom:.35rem">${escapeHtml(c.name || '')}</div>`;
+      html += `<div style="font-size:13px">${escapeHtml(c.description || '')}</div>`;
+      if (c.examples && c.examples.length) {
+        html += `<div class="detail-label">Examples</div><ul style="font-size:12px;padding-left:1rem;color:var(--text-muted)">`;
+        c.examples.forEach(ex => html += `<li>${escapeHtml(ex)}</li>`);
+        html += '</ul>';
+      }
+      break;
+    case 'constraint':
+      html += `<div style="font-size:15px">${escapeHtml(c.text || '')}</div>`;
+      html += `<div style="margin-top:.5rem;display:flex;gap:.4rem">${pillHtml(c.type || '')} ${severityBadge(c.severity)}</div>`;
+      break;
+    case 'open_question':
+      html += `<div style="font-size:15px;font-style:italic">${escapeHtml(c.question || '')}</div>`;
+      if (c.context) html += `<div class="detail-label">Context</div><div style="font-size:12px;color:var(--text-muted)">${escapeHtml(c.context)}</div>`;
+      html += `<div style="margin-top:.5rem">${impactBadge(c.impact)}</div>`;
+      break;
+    case 'persona':
+      html += `<div style="font-size:16px;font-weight:600;margin-bottom:.35rem">${escapeHtml(c.name || '')}</div>`;
+      if (c.needs && c.needs.length) {
+        html += `<div class="detail-label">Needs</div><ul style="font-size:12px;padding-left:1rem;color:var(--text-muted)">`;
+        c.needs.forEach(n => html += `<li>${escapeHtml(n)}</li>`);
+        html += '</ul>';
+      }
+      if (c.pain_points && c.pain_points.length) {
+        html += `<div class="detail-label">Pain points</div><ul style="font-size:12px;padding-left:1rem;color:var(--text-muted)">`;
+        c.pain_points.forEach(p => html += `<li>${escapeHtml(p)}</li>`);
+        html += '</ul>';
+      }
+      break;
+    case 'key_fact':
+      html += `<div style="font-size:15px">${escapeHtml(c.text || '')}</div>`;
+      html += `<div style="margin-top:.5rem">${pillHtml(c.category || '')}</div>`;
+      break;
+    default:
+      html += `<pre style="font-size:11px;white-space:pre-wrap">${escapeHtml(JSON.stringify(c, null, 2))}</pre>`;
+  }
+
+  html += '</div>';
+  content.innerHTML = html;
+  panel.classList.add('open');
+}
+
+function closeDetailPanel() {
+  document.getElementById('node-detail-panel').classList.remove('open');
+  state.selectedNodeId = null;
+}
+
+function confidenceBadge(v) {
+  const colors = { high: '#22c55e', medium: '#f59e0b', low: '#ef4444' };
+  const c = colors[v] || '#6b7280';
+  return `<span class="detail-confidence" style="background:${c}22;color:${c};border:1px solid ${c}44">Confidence: ${escapeHtml(v || 'unknown')}</span>`;
+}
+
+function severityBadge(v) {
+  const c = v === 'hard' ? '#ef4444' : '#f59e0b';
+  return `<span class="detail-tag" style="border-color:${c}55;color:${c}">${escapeHtml(v || '')}</span>`;
+}
+
+function impactBadge(v) {
+  const colors = { high: '#ef4444', medium: '#f59e0b', low: '#22c55e' };
+  const c = colors[v] || '#6b7280';
+  return `<span style="font-size:11px;padding:.15rem .4rem;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44">Impact: ${escapeHtml(v || '')}</span>`;
+}
+
+function removeSelectedSignal() {
+  if (!state.selectedNodeId) return;
+  state.signals = state.signals.filter(s => s.id !== state.selectedNodeId);
+  state.relationships = state.relationships.filter(r => r.from_id !== state.selectedNodeId && r.to_id !== state.selectedNodeId);
+  closeDetailPanel();
+  renderSignalMap(state.signals, state.relationships, 'signal-map', false);
+  renderSignalGrid(state.signals);
+  document.getElementById('review-heading').textContent =
+    `${state.signals.length} signal${state.signals.length !== 1 ? 's' : ''} extracted from ${state.sourceName}`;
+}
+
+// ─────────────────────────── FEEDBACK / REVISE ────────────────────
+let feedbackOpen = false;
+
+function toggleFeedback() {
+  feedbackOpen = !feedbackOpen;
+  const panel = document.getElementById('feedback-panel');
+  if (feedbackOpen) {
+    panel.classList.add('open');
+    if (state.revisionCount > 0) {
+      const badge = document.getElementById('revision-badge');
+      badge.textContent = `Revision ${state.revisionCount}`;
+      badge.style.display = 'inline-block';
+    }
+  } else {
+    panel.classList.remove('open');
+  }
+}
+
+async function reExtract() {
+  const feedback = document.getElementById('feedback-textarea').value.trim();
+  if (!feedback) { toast('Please enter feedback'); return; }
+
+  setLoading('btn-reextract', true, 'Re-extracting…');
+  document.getElementById('feedback-textarea').disabled = true;
+
+  try {
+    const res = await fetch('/revise', {
+      method: 'POST',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ batch_id: state.batchId, feedback })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    state.signals = data.signals;
+    state.relationships = data.relationships;
+    state.revisionCount++;
+
+    document.getElementById('extraction-notes-text').textContent = data.extraction_notes;
+    renderSignalMap(data.signals, data.relationships, 'signal-map', false);
+    renderSignalGrid(data.signals);
+    document.getElementById('review-heading').textContent =
+      `${data.signals.length} signal${data.signals.length !== 1 ? 's' : ''} extracted from ${state.sourceName}`;
+
+    document.getElementById('feedback-textarea').value = '';
+    toggleFeedback();
+    toast('Signals revised', 'success');
+  } catch (e) {
+    toast('Revision failed: ' + e.message);
+  } finally {
+    setLoading('btn-reextract', false, 'Re-extract with feedback →');
+    document.getElementById('feedback-textarea').disabled = false;
+  }
+}
+
+// ─────────────────────────── CONFIRM ────────────────────────────
+async function confirmSignals() {
+  if (!state.batchId) return;
+
+  setLoading('btn-confirm', true, 'Storing…');
+
+  try {
+    const res = await fetch('/confirm', {
+      method: 'POST',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ batch_id: state.batchId })
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+
+    state.memoryTotal = data.total_memory_size;
+
+    // fetch full memory for confirmed stage
+    const memRes = await fetch('/memory');
+    const memData = await memRes.json();
+
+    renderConfirmedStage(data, memData);
+    updateSidebar(memData);
+    showStage('stage-confirmed');
+    toast(`${data.confirmed_count} signals stored`, 'success');
+  } catch (e) {
+    toast('Confirm failed: ' + e.message);
+  } finally {
+    setLoading('btn-confirm', false, 'Confirm & store →');
+  }
+}
+
+function renderConfirmedStage(confirmData, memData) {
+  document.getElementById('confirmed-count-heading').textContent =
+    `✓ ${confirmData.confirmed_count} signals confirmed`;
+  document.getElementById('confirmed-source-label').textContent = state.sourceName;
+  document.getElementById('stat-total').textContent = confirmData.total_memory_size;
+  document.getElementById('stat-sources').textContent = confirmData.sources_in_memory.length;
+  document.getElementById('stat-types').textContent = Object.keys(memData.by_type).length;
+
+  const badges = document.getElementById('confirmed-badges');
+  badges.innerHTML = '';
+  Object.entries(memData.by_type).forEach(([type, count]) => {
+    badges.innerHTML += `<span class="type-badge">${dotHtml(type)}${escapeHtml(type)} <strong>${Number(count)}</strong></span>`;
+  });
+
+  // mini map
+  const allSignals = Object.values(memData.signals_by_type).flat();
+  renderSignalMap(allSignals, memData.relationship_graph.map(r => ({ from_id: r.from_id, to_id: r.to_id, relationship_type: r.relationship_type })), 'mini-map', true);
+}
+
+// ─────────────────────────── SIDEBAR ────────────────────────────
+function dotHtml(type) {
+  const color = SIGNAL_COLORS[type] || '#6b7280';
+  return `<span class="dot" style="background:${color}"></span>`;
+}
+
+async function updateSidebar(memData) {
+  if (!memData) {
+    const res = await fetch('/memory');
+    memData = await res.json();
+  }
+
+  const total = memData.total;
+  const emptyMsg = document.getElementById('memory-empty-msg');
+  const badges = document.getElementById('memory-badges');
+  const totalEl = document.getElementById('memory-total');
+  const clearBtn = document.getElementById('btn-clear-memory');
+  const queryPanel = document.getElementById('query-panel');
+
+  if (total === 0) {
+    emptyMsg.style.display = 'block';
+    badges.style.display = 'none';
+    totalEl.style.display = 'none';
+    clearBtn.style.display = 'none';
+    queryPanel.classList.remove('visible');
+  } else {
+    emptyMsg.style.display = 'none';
+    badges.style.display = 'flex';
+    totalEl.style.display = 'block';
+    clearBtn.style.display = 'block';
+    queryPanel.classList.add('visible');
+
+    badges.innerHTML = '';
+    Object.entries(memData.by_type).forEach(([type, count]) => {
+      badges.innerHTML += `<span class="type-badge">${dotHtml(type)}${escapeHtml(type)} <strong>${Number(count)}</strong></span>`;
+    });
+    totalEl.textContent = `${total} signal${total !== 1 ? 's' : ''} in memory`;
+  }
+}
+
+async function clearMemory() {
+  if (!confirm('Clear all memory? This cannot be undone.')) return;
+  await fetch('/memory', { method: 'DELETE' });
+  updateSidebar({ total: 0, by_type: {}, sources: [], signals_by_type: {}, relationship_graph: [] });
+  toast('Memory cleared', 'success');
+}
+
+// ─────────────────────────── QUERY ────────────────────────────
+let queryModeState = 'answer';
+
+function setMode(mode) {
+  queryModeState = mode;
+  document.getElementById('mode-answer').classList.toggle('active', mode === 'answer');
+  document.getElementById('mode-artifact').classList.toggle('active', mode === 'generate_artifact');
+  const ta = document.getElementById('query-textarea');
+  ta.placeholder = mode === 'answer'
+    ? 'Ask anything about your context...'
+    : 'Describe a component or screen to generate...';
+  document.getElementById('btn-query').textContent = mode === 'answer' ? 'Query →' : 'Generate →';
+}
+
+async function submitQuery() {
+  const question = document.getElementById('query-textarea').value.trim();
+  if (!question) { toast('Please enter a question'); return; }
+
+  const btn = document.getElementById('btn-query');
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span> Querying…`;
+
+  try {
+    const res = await fetch('/query', {
+      method: 'POST',
+      headers: apiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ question, mode: queryModeState })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Query failed');
+    }
+    const data = await res.json();
+    renderQueryResult(data, queryModeState, question);
+    showStage('stage-query');
+  } catch (e) {
+    toast('Query failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = queryModeState === 'answer' ? 'Query →' : 'Generate →';
+  }
+}
+
+function renderQueryResult(data, mode, question) {
+  const container = document.getElementById('query-result-content');
+
+  if (mode === 'answer') {
+    const confClass = { high: 'conf-high', medium: 'conf-medium', low: 'conf-low' }[data.confidence] || 'conf-low';
+
+    let html = `
+      <div class="query-result-header">
+        <h2>Answer</h2>
+        <span class="confidence-badge ${confClass}">${data.confidence}</span>
+      </div>
+      <div class="answer-card">${escapeHtml(data.answer)}</div>
+    `;
+
+    if (data.retrieved_signals && data.retrieved_signals.length) {
+      html += `<div class="section-heading">Signals retrieved (${data.retrieved_signals.length} of ${state.memoryTotal} by semantic similarity)</div>`;
+      html += '<div class="signals-used-list">';
+      data.retrieved_signals.forEach(s => {
+        const scoreVal = s._score || 0;
+        const scorePct = Math.round(scoreVal * 100);
+        const scoreClass = scorePct >= 80 ? 'score-green' : scorePct >= 60 ? 'score-amber' : 'score-red';
+        const summary = signalPrimaryText(s).slice(0, 80);
+        html += `<div class="su-card">
+          ${badgeHtml(s.signal_type, s.signal_type)}
+          <div class="su-middle">
+            <div class="su-source">${escapeHtml(s.source_name)}</div>
+            <div class="su-summary">${escapeHtml(summary)}</div>
+          </div>
+          <div class="su-score ${scoreClass}">${scorePct}%</div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    if (data.conflicts && data.conflicts.filter(c => c).length) {
+      html += `<div class="conflicts-section"><div class="section-heading">Conflicts</div>`;
+      data.conflicts.filter(c => c).forEach(c => {
+        html += `<div class="conflict-card"><span>⚠</span><span>${escapeHtml(c)}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    html += `<button class="btn-ask-another" onclick="askAnother()">Ask another</button>`;
+    container.innerHTML = html;
+
+  } else {
+    // artifact mode
+    let html = `<div class="query-result-header"><h2>Generated component</h2></div>`;
+
+    if (data.signals_used && data.signals_used.length) {
+      html += `<div class="section-heading" style="margin-bottom:.5rem">Signals retrieved (${data.signals_used.length} of ${state.memoryTotal} by semantic similarity)</div>`;
+      html += '<div class="signals-used-list" style="margin-bottom:1rem">';
+      data.signals_used.slice(0, 5).forEach(s => {
+        const scoreVal = s._score || 0;
+        const scorePct = Math.round(scoreVal * 100);
+        const scoreClass = scorePct >= 80 ? 'score-green' : scorePct >= 60 ? 'score-amber' : 'score-red';
+        html += `<div class="su-card">
+          ${badgeHtml(s.signal_type, s.signal_type)}
+          <div class="su-middle">
+            <div class="su-source">${escapeHtml(s.source_name)}</div>
+            <div class="su-summary">${escapeHtml(signalPrimaryText(s).slice(0, 60))}</div>
+          </div>
+          <div class="su-score ${scoreClass}">${scorePct}%</div>
+        </div>`;
+      });
+      if (data.signals_used.length > 5) {
+        html += `<div style="font-size:12px;color:var(--text-muted);padding:.25rem .75rem">…and ${data.signals_used.length - 5} more</div>`;
+      }
+      html += '</div>';
+    }
+
+    const codeId = 'generated-code-block';
+    html += `
+      <div class="code-wrap">
+        <div class="code-toolbar">
+          <button class="btn-copy" id="btn-copy-code" onclick="copyCode()">Copy code</button>
+        </div>
+        <pre><code id="${codeId}" class="language-jsx"></code></pre>
+      </div>
+    `;
+
+    // parse memory signals comment
+    const memSignals = parseMemoryComment(data.code || '');
+    if (memSignals.length) {
+      html += `<div class="mem-signals-section"><div class="section-heading">Memory signals applied</div>`;
+      memSignals.forEach(line => {
+        const match = line.match(/^\[(\w+)\]\s+(.+?):\s+(.*)$/);
+        if (match) {
+          html += `<div class="mem-signal-row">${badgeHtml(match[1], match[1])}<span style="font-size:13px"><strong>${match[2]}</strong>: ${escapeHtml(match[3])}</span></div>`;
+        } else if (line.trim()) {
+          html += `<div class="mem-signal-row"><span style="font-size:13px;color:var(--text-muted)">${escapeHtml(line)}</span></div>`;
+        }
+      });
+      html += '</div>';
+    }
+
+    html += `<button class="btn-ask-another" onclick="askAnother()">Ask another</button>`;
+    container.innerHTML = html;
+
+    // set code and highlight
+    const codeEl = document.getElementById(codeId);
+    if (codeEl) {
+      codeEl.textContent = data.code || '';
+      hljs.highlightElement(codeEl);
+    }
+    window._generatedCode = data.code || '';
+  }
+}
+
+function parseMemoryComment(code) {
+  const match = code.match(/\/\*\s*\n\s*\*\s*MEMORY SIGNALS APPLIED[\s\S]*?\*\//);
+  if (!match) return [];
+  const block = match[0];
+  const lines = block.split('\n').slice(2, -1);
+  return lines.map(l => l.replace(/^\s*\*\s*/, '').trim()).filter(l => l && !l.startsWith('---'));
+}
+
+function copyCode() {
+  navigator.clipboard.writeText(window._generatedCode || '').then(() => {
+    const btn = document.getElementById('btn-copy-code');
+    if (btn) { btn.textContent = 'Copied! ✓'; setTimeout(() => btn.textContent = 'Copy code', 2000); }
+  });
+}
+
+function askAnother() {
+  showStage('stage-confirmed');
+  focusQuery();
+}
+
+// ─────────────────────────── NAV ────────────────────────────
+function goToIngest() {
+  // reset ingest form
+  document.getElementById('source-name').value = '';
+  document.getElementById('paste-text').value = '';
+  document.getElementById('file-chips').innerHTML = '';
+  state.selectedFiles = [];
+  state.batchId = null;
+  state.signals = [];
+  state.revisionCount = 0;
+  showStage('stage-ingest');
+}
+
+function focusQuery() {
+  document.getElementById('query-textarea').focus();
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ─────────────────────────── INIT ────────────────────────────
+(async () => {
+  try {
+    const res = await fetch('/memory');
+    const data = await res.json();
+    state.memoryTotal = data.total;
+    updateSidebar(data);
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

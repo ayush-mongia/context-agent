@@ -402,6 +402,14 @@
           <button class="btn-unlock" id="btn-unlock" onclick="unlockWithKey()">Unlock →</button>
         </div>
       </div>
+      <div class="field-group">
+        <label>Model</label>
+        <select id="model-select" class="field-select">
+          <option value="gemini-2.5-flash">gemini-2.5-flash (default)</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash (stable)</option>
+          <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (fallback)</option>
+        </select>
+      </div>
       <div id="apikey-error" style="font-size:13px;color:var(--red);display:none"></div>
       <p style="font-size:12px;color:var(--text-muted)">Get a free key at <span style="color:var(--blue)">aistudio.google.com</span></p>
     </div>
@@ -544,6 +552,7 @@
 // ─────────────────────────── STATE ────────────────────────────
 let state = {
   geminiApiKey: '',   // lives only in JS memory — gone on refresh
+  geminiModel: 'gemini-2.5-flash',
   batchId: null,
   signals: [],
   relationships: [],
@@ -557,7 +566,7 @@ let state = {
 };
 
 function apiHeaders(extra) {
-  return Object.assign({ 'X-Gemini-Api-Key': state.geminiApiKey }, extra);
+  return Object.assign({ 'X-Gemini-Api-Key': state.geminiApiKey, 'X-Gemini-Model': state.geminiModel }, extra);
 }
 
 const SIGNAL_COLORS = {
@@ -641,6 +650,7 @@ async function unlockWithKey() {
       throw new Error(err.detail || 'Invalid key');
     }
     state.geminiApiKey = key;
+    state.geminiModel = document.getElementById('model-select').value;
     showStage('stage-ingest');
   } catch (e) {
     errorEl.textContent = e.message;
